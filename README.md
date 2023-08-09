@@ -27,5 +27,5 @@
 </h3>
 
 <h2>Graphical user interface</h2>
-![image](https://github.com/willR30/Taopic/assets/50780601/b5cd071e-9fc5-4c11-9204-c6ab169b26d3)
+<img src="https://github.com/willR30/Taopic/assets/50780601/b5cd071e-9fc5-4c11-9204-c6ab169b26d3">
 
