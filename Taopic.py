@@ -1,5 +1,5 @@
 import os
-from tkinter import Tk, Label, Button, filedialog, OptionMenu, StringVar, Entry, colorchooser
+from tkinter import Tk, Label, Button, filedialog, OptionMenu, StringVar, Entry, colorchooser, Checkbutton, IntVar
 from PIL import Image, ImageOps
 
 input_folder_path = ""
@@ -27,48 +27,49 @@ def choose_background_color():
         background_color_entry.insert(0, ','.join(map(str, color[0])))
 
 
-def test():
-    print(input_folder_path)
-
-
 def process_images():
     global input_folder_path, output_folder_path
 
     if input_folder_path and output_folder_path:
         os.makedirs(output_folder_path, exist_ok=True)
 
-        file_format = file_format_var_input.get()  # Obtiene el formato de salida seleccionado
-        background_color = tuple(map(int, background_color_entry.get().split(',')))  # Obtiene el color de fondo
-        target_width = int(width_entry.get())  # Obtiene el ancho objetivo
-        target_height = int(height_entry.get())  # Obtiene el alto objetivo
-        padding = int(padding_entry.get())  # Obtiene el valor de padding
+        input_format = input_format_var.get()  # Formato de entrada seleccionado
+        file_format = file_format_var_output.get()  # Formato de salida seleccionado
+        compression_algorithm = compression_var.get()  # Algoritmo de compresión seleccionado
+        background_color = tuple(map(int, background_color_entry.get().split(',')))
+        target_width = int(width_entry.get())
+        target_height = int(height_entry.get())
+        padding = int(padding_entry.get())
+        apply_lossless = lossless_var.get()
 
         for root, dirs, files in os.walk(input_folder_path):
             for file in files:
-                if file.lower().endswith(".png"):
+                # Filtrar solo las imágenes del formato de entrada seleccionado
+                if file.lower().endswith(input_format):
                     file_path = os.path.join(root, file)
-                    img = Image.open(file_path)
+                    img = Image.open(file_path).convert("RGB")  # Convertir a RGB si no se necesita transparencia
 
-                    # Convierte la imagen PNG a modo RGBA
-                    img = img.convert("RGBA")
+                    # Fondo personalizado
+                    background = Image.new("RGB", img.size, background_color)
+                    new_img = Image.alpha_composite(background, img) if img.mode == "RGBA" else img
 
-                    # Crea una nueva imagen con fondo blanco
-                    background = Image.new("RGBA", img.size, background_color)
-
-                    # Combina la imagen original con el fondo blanco
-                    new_img = Image.alpha_composite(background, img)
-
-                    # Calcula las dimensiones para aplicar el padding
+                    # Redimensionar y aplicar padding
                     target_size = (target_width, target_height)
-                    padding = padding
-
-                    # Aplica el padding
                     img_resized = ImageOps.pad(new_img, target_size, color=background_color, centering=(0.5, 0.5))
                     img_resized = ImageOps.expand(img_resized, padding, fill=background_color)
 
-                    # Guarda la imagen como JPG
-                    new_file_path = os.path.join(output_folder_path, os.path.splitext(file)[0] + ".jpg")
-                    img_resized.convert("RGB").save(new_file_path, "JPEG")
+                    # Ruta de guardado con la extensión correcta
+                    new_file_path = os.path.join(output_folder_path, os.path.splitext(file)[0] + file_format)
+
+                    # Compresión según el algoritmo seleccionado
+                    if compression_algorithm == "JPEG":
+                        img_resized.save(new_file_path, "JPEG", optimize=True, quality=75 if apply_lossless else 85)  # Ajuste de calidad
+                    elif compression_algorithm == "PNG":
+                        img_resized.save(new_file_path, "PNG", optimize=True, compression_level=9)  # Nivel de compresión máximo
+                    elif compression_algorithm == "WebP":
+                        img_resized.save(new_file_path, "WEBP", lossless=apply_lossless, quality=75 if apply_lossless else 85)  # Ajuste de calidad
+                    elif compression_algorithm == "AVIF":
+                        img_resized.save(new_file_path, "AVIF", lossless=apply_lossless, quality=75 if apply_lossless else 85)
 
         message_label.config(text="¡Processing completed!")
 
@@ -76,7 +77,7 @@ def process_images():
 # Crear la ventana principal
 window = Tk()
 window.title("Taopic")
-window.geometry("400x600")
+window.geometry("400x800")
 
 # Etiqueta y botón para seleccionar la carpeta de entrada
 input_folder_label = Label(window, text="Select the input folder")
@@ -90,63 +91,69 @@ output_folder_label.pack(pady=10)
 output_folder_button = Button(window, text="Select the output folder", command=choose_output_folder)
 output_folder_button.pack()
 
-# Etiqueta de instrucciones
-instruction_label = Label(window, text="Input image format")
-instruction_label.pack(pady=10)
+# Menú para seleccionar formato de entrada
+input_format_label = Label(window, text="Input image format")
+input_format_label.pack(pady=10)
+input_formats = [".png", ".jpg", ".jpeg", ".webp", ".avif"]
+input_format_var = StringVar(window)
+input_format_var.set(input_formats[0])  # Formato por defecto
+input_format_dropdown = OptionMenu(window, input_format_var, *input_formats)
+input_format_dropdown.pack()
 
-# Etiqueta y menú desplegable para las imagenes de entrada
-file_input_images_format = Label(window, text="input image format:")
-file_input_images_format.pack()
-file_input_formats_select = [".png"]
-file_format_var_input = StringVar(window)
-file_format_var_input.set(file_input_formats_select[0])  # Valor predeterminado
-file_format_dropdown_input = OptionMenu(window, file_format_var_input, *file_input_formats_select)
-file_format_dropdown_input.pack()
+# Etiqueta para formato de salida
+output_format_label = Label(window, text="Output image format")
+output_format_label.pack(pady=10)
+file_output_formats_select = [".jpg", ".png", ".webp", ".avif"]
+file_format_var_output = StringVar(window)
+file_format_var_output.set(file_output_formats_select[0])
+file_format_dropdown_output = OptionMenu(window, file_format_var_output, *file_output_formats_select)
+file_format_dropdown_output.pack()
 
-# Etiqueta y menú desplegable para las imagenes de salida
-file_input_images_format = Label(window, text="Output image format")
-file_input_images_format.pack()
-file_input_formats_select = [".jpg"]
-file_format_var_input = StringVar(window)
-file_format_var_input.set(file_input_formats_select[0])  # Valor predeterminado
-file_format_dropdown_input = OptionMenu(window, file_format_var_input, *file_input_formats_select)
-file_format_dropdown_input.pack()
+# Menú para seleccionar algoritmo de compresión
+compression_label = Label(window, text="Select compression algorithm")
+compression_label.pack(pady=10)
+compression_algorithms = ["JPEG", "PNG", "WebP", "AVIF"]
+compression_var = StringVar(window)
+compression_var.set(compression_algorithms[0])
+compression_dropdown = OptionMenu(window, compression_var, *compression_algorithms)
+compression_dropdown.pack()
 
-# Etiqueta, campo de entrada y botón para el color de fondo
+# Checkbox para compresión sin pérdida
+lossless_var = IntVar()
+lossless_checkbox = Checkbutton(window, text="Apply lossless compression", variable=lossless_var)
+lossless_checkbox.pack(pady=5)
+
+# Color de fondo
 background_color_label = Label(window, text="Background color")
 background_color_label.pack()
-
 background_color_entry = Entry(window)
 background_color_entry.pack()
-
 choose_color_button = Button(window, text="Select", command=choose_background_color)
 choose_color_button.pack()
 
-# Etiqueta y campo de entrada para el ancho objetivo
+# Dimensiones y padding
 width_label = Label(window, text="Objective width:")
 width_label.pack()
 width_entry = Entry(window)
 width_entry.pack()
 
-# Etiqueta y campo de entrada para el alto objetivo
-height_label = Label(window, text="Ojective height:")
+height_label = Label(window, text="Objective height:")
 height_label.pack()
 height_entry = Entry(window)
 height_entry.pack()
 
-# Etiqueta y campo de entrada para el padding
 padding_label = Label(window, text="Padding:")
 padding_label.pack()
 padding_entry = Entry(window)
 padding_entry.pack()
 
-# Botón para iniciar el procesamiento
+# Botón para procesar imágenes
 process_button = Button(window, text="Process images", command=process_images)
 process_button.pack(pady=10)
 
-# Etiqueta para mostrar el mensaje de finalización
+# Mensaje de estado
 message_label = Label(window, text="")
 message_label.pack()
 
-# Ejecutar el bucle principal de la interfaz gráfica
+# Ejecutar la interfaz
 window.mainloop()
