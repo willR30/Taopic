@@ -33,9 +33,9 @@ def process_images():
     if input_folder_path and output_folder_path:
         os.makedirs(output_folder_path, exist_ok=True)
 
-        input_format = input_format_var.get()  # Formato de entrada seleccionado
-        file_format = file_format_var_output.get()  # Formato de salida seleccionado
-        compression_algorithm = compression_var.get()  # Algoritmo de compresión seleccionado
+        input_format = input_format_var.get()
+        file_format = file_format_var_output.get()
+        compression_algorithm = compression_var.get()
         background_color = tuple(map(int, background_color_entry.get().split(',')))
         target_width = int(width_entry.get())
         target_height = int(height_entry.get())
@@ -44,34 +44,37 @@ def process_images():
 
         for root, dirs, files in os.walk(input_folder_path):
             for file in files:
-                # Filtrar solo las imágenes del formato de entrada seleccionado
                 if file.lower().endswith(input_format):
                     file_path = os.path.join(root, file)
-                    img = Image.open(file_path).convert("RGB")  # Convertir a RGB si no se necesita transparencia
+                    img = Image.open(file_path)
 
-                    # Fondo personalizado
-                    background = Image.new("RGB", img.size, background_color)
-                    new_img = Image.alpha_composite(background, img) if img.mode == "RGBA" else img
+                    # Detectar si tiene canal alfa (transparencia)
+                    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                        img = img.convert("RGBA")
+                        background = Image.new("RGBA", img.size, background_color + (255,))
+                        img = Image.alpha_composite(background, img).convert("RGB")
+                    else:
+                        img = img.convert("RGB")
 
                     # Redimensionar y aplicar padding
                     target_size = (target_width, target_height)
-                    img_resized = ImageOps.pad(new_img, target_size, color=background_color, centering=(0.5, 0.5))
+                    img_resized = ImageOps.pad(img, target_size, color=background_color, centering=(0.5, 0.5))
                     img_resized = ImageOps.expand(img_resized, padding, fill=background_color)
 
-                    # Ruta de guardado con la extensión correcta
+                    # Construir ruta de salida
                     new_file_path = os.path.join(output_folder_path, os.path.splitext(file)[0] + file_format)
 
-                    # Compresión según el algoritmo seleccionado
+                    # Guardar con compresión correspondiente
                     if compression_algorithm == "JPEG":
-                        img_resized.save(new_file_path, "JPEG", optimize=True, quality=75 if apply_lossless else 85)  # Ajuste de calidad
+                        img_resized.save(new_file_path, "JPEG", optimize=True, quality=75 if apply_lossless else 85)
                     elif compression_algorithm == "PNG":
-                        img_resized.save(new_file_path, "PNG", optimize=True, compression_level=9)  # Nivel de compresión máximo
+                        img_resized.save(new_file_path, "PNG", optimize=True, compress_level=9)
                     elif compression_algorithm == "WebP":
-                        img_resized.save(new_file_path, "WEBP", lossless=apply_lossless, quality=75 if apply_lossless else 85)  # Ajuste de calidad
+                        img_resized.save(new_file_path, "WEBP", lossless=bool(apply_lossless), quality=75 if apply_lossless else 85)
                     elif compression_algorithm == "AVIF":
-                        img_resized.save(new_file_path, "AVIF", lossless=apply_lossless, quality=75 if apply_lossless else 85)
+                        img_resized.save(new_file_path, "AVIF", lossless=bool(apply_lossless), quality=75 if apply_lossless else 85)
 
-        message_label.config(text="¡Processing completed!")
+        message_label.config(text="¡Procesamiento completado!")
 
 
 # Crear la ventana principal
