@@ -1,162 +1,226 @@
 import os
-from tkinter import Tk, Label, Button, filedialog, OptionMenu, StringVar, Entry, colorchooser, Checkbutton, IntVar
+from tkinter import Tk, Label, Entry, StringVar, IntVar, Frame, filedialog, colorchooser, messagebox
+from tkinter import ttk
 from PIL import Image, ImageOps
+
+try:
+    from rembg import remove
+    REMBG_AVAILABLE = True
+except ImportError:
+    REMBG_AVAILABLE = False
 
 input_folder_path = ""
 output_folder_path = ""
 
-
+# === FUNCTIONS ===
 def choose_input_folder():
     global input_folder_path
-    input_folder_path = filedialog.askdirectory(title="Seleccione la carpeta de entrada")
+    input_folder_path = filedialog.askdirectory(title="Select Input Folder")
     if input_folder_path:
-        input_folder_label.config(text="Carpeta de entrada seleccionada")
-
+        input_folder_label.config(text=f"Input: {os.path.basename(input_folder_path)}", foreground="#00ff99")
 
 def choose_output_folder():
     global output_folder_path
-    output_folder_path = filedialog.askdirectory(title="Seleccione la carpeta de destino")
+    output_folder_path = filedialog.askdirectory(title="Select Output Folder")
     if output_folder_path:
-        output_folder_label.config(text="Carpeta de destino seleccionada")
-
+        output_folder_label.config(text=f"Output: {os.path.basename(output_folder_path)}", foreground="#00ff99")
 
 def choose_background_color():
-    color = colorchooser.askcolor(title="Seleccione un color")
-    if color:
+    color = colorchooser.askcolor(title="Choose Background Color")
+    if color and color[0]:
         background_color_entry.delete(0, 'end')
         background_color_entry.insert(0, ','.join(map(str, color[0])))
 
+def has_transparency(img):
+    """Detecta si la imagen tiene canal alfa o transparencia."""
+    if img.mode in ("RGBA", "LA"):
+        extrema = img.getextrema()
+        if extrema[3][0] < 255:
+            return True
+    elif img.info.get("transparency", None) is not None:
+        return True
+    return False
+
+def remove_background(img):
+    """Elimina el fondo usando rembg si está disponible, de lo contrario intenta método básico."""
+    if REMBG_AVAILABLE:
+        return Image.open(
+            remove(img.tobytes(), alpha_matting=True, alpha_matting_foreground_threshold=240)
+        ).convert("RGBA")
+    else:
+        # Método básico: convertir a RGBA y quitar fondo blanco/casi blanco
+        img = img.convert("RGBA")
+        datas = img.getdata()
+        newData = []
+        for item in datas:
+            if item[0] > 240 and item[1] > 240 and item[2] > 240:
+                newData.append((255, 255, 255, 0))
+            else:
+                newData.append(item)
+        img.putdata(newData)
+        return img
 
 def process_images():
     global input_folder_path, output_folder_path
 
-    if input_folder_path and output_folder_path:
-        os.makedirs(output_folder_path, exist_ok=True)
-
-        input_format = input_format_var.get()
-        file_format = file_format_var_output.get()
-        compression_algorithm = compression_var.get()
+    if not input_folder_path:
+        messagebox.showerror("Error", "Please select an input folder.")
+        return
+    if not output_folder_path:
+        messagebox.showerror("Error", "Please select an output folder.")
+        return
+    try:
         background_color = tuple(map(int, background_color_entry.get().split(',')))
+        if len(background_color) != 3:
+            raise ValueError
+    except:
+        messagebox.showerror("Error", "Background color must be 3 comma-separated integers (R,G,B).")
+        return
+    try:
         target_width = int(width_entry.get())
         target_height = int(height_entry.get())
         padding = int(padding_entry.get())
-        apply_lossless = lossless_var.get()
+        if target_width <= 0 or target_height <= 0 or padding < 0:
+            raise ValueError
+    except:
+        messagebox.showerror("Error", "Width, Height must be positive integers and Padding must be zero or positive integer.")
+        return
 
-        for root, dirs, files in os.walk(input_folder_path):
-            for file in files:
-                if file.lower().endswith(input_format):
-                    file_path = os.path.join(root, file)
-                    img = Image.open(file_path)
+    input_format = input_format_var.get()
+    file_format = file_format_var_output.get()
+    compression_algorithm = compression_var.get()
+    apply_lossless = lossless_var.get()
+    apply_bg_removal = remove_bg_var.get()
 
-                    # Detectar si tiene canal alfa (transparencia)
-                    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
-                        img = img.convert("RGBA")
-                        background = Image.new("RGBA", img.size, background_color + (255,))
-                        img = Image.alpha_composite(background, img).convert("RGB")
-                    else:
-                        img = img.convert("RGB")
+    files_to_process = []
+    for root, _, files in os.walk(input_folder_path):
+        for file in files:
+            if file.lower().endswith(input_format):
+                files_to_process.append(os.path.join(root, file))
+    if not files_to_process:
+        messagebox.showerror("Error", f"No files with extension '{input_format}' found in input folder.")
+        return
 
-                    # Redimensionar y aplicar padding
-                    target_size = (target_width, target_height)
-                    img_resized = ImageOps.pad(img, target_size, color=background_color, centering=(0.5, 0.5))
-                    img_resized = ImageOps.expand(img_resized, padding, fill=background_color)
+    os.makedirs(output_folder_path, exist_ok=True)
 
-                    # Construir ruta de salida
-                    new_file_path = os.path.join(output_folder_path, os.path.splitext(file)[0] + file_format)
+    total = len(files_to_process)
+    current = 0
 
-                    # Guardar con compresión correspondiente
-                    if compression_algorithm == "JPEG":
-                        img_resized.save(new_file_path, "JPEG", optimize=True, quality=75 if apply_lossless else 85)
-                    elif compression_algorithm == "PNG":
-                        img_resized.save(new_file_path, "PNG", optimize=True, compress_level=9)
-                    elif compression_algorithm == "WebP":
-                        img_resized.save(new_file_path, "WEBP", lossless=bool(apply_lossless), quality=75 if apply_lossless else 85)
-                    elif compression_algorithm == "AVIF":
-                        img_resized.save(new_file_path, "AVIF", lossless=bool(apply_lossless), quality=75 if apply_lossless else 85)
+    for file_path in files_to_process:
+        img = Image.open(file_path)
 
-        message_label.config(text="¡Procesamiento completado!")
+        # === Nueva lógica: quitar fondo si el usuario lo pidió ===
+        if apply_bg_removal and has_transparency(img):
+            img = remove_background(img)
 
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            img = img.convert("RGBA")
+            background = Image.new("RGBA", img.size, background_color + (255,))
+            img = Image.alpha_composite(background, img).convert("RGB")
+        else:
+            img = img.convert("RGB")
 
-# Crear la ventana principal
+        target_size = (target_width, target_height)
+        img_resized = ImageOps.pad(img, target_size, color=background_color, centering=(0.5, 0.5))
+        img_resized = ImageOps.expand(img_resized, padding, fill=background_color)
+
+        new_file_path = os.path.join(output_folder_path, os.path.splitext(os.path.basename(file_path))[0] + file_format)
+
+        if compression_algorithm == "JPEG":
+            img_resized.save(new_file_path, "JPEG", optimize=True, quality=75 if apply_lossless else 85)
+        elif compression_algorithm == "PNG":
+            img_resized.save(new_file_path, "PNG", optimize=True, compress_level=9)
+        elif compression_algorithm == "WebP":
+            img_resized.save(new_file_path, "WEBP", lossless=bool(apply_lossless), quality=75 if apply_lossless else 85)
+        elif compression_algorithm == "AVIF":
+            img_resized.save(new_file_path, "AVIF", lossless=bool(apply_lossless), quality=75 if apply_lossless else 85)
+
+        current += 1
+        progress_bar['value'] = (current / total) * 100
+        window.update_idletasks()
+
+    message_label.config(text="✅ Processing Complete!", foreground="#00ff99")
+    messagebox.showinfo("Success", "Processing complete!")
+
+# === DARK THEME CONFIG ===
+BG_COLOR = "#121212"
+FG_COLOR = "#FFFFFF"
+ENTRY_BG = "#1E1E1E"
+ACCENT_COLOR = "#00C9A7"
+FONT = ("Segoe UI", 10)
+
+# === WINDOW ===
 window = Tk()
-window.title("Taopic")
-window.geometry("400x800")
+window.title("Taopic - Modern UI")
+window.geometry("500x850")
+window.configure(bg=BG_COLOR)
+window.resizable(width=True, height=False)
 
-# Etiqueta y botón para seleccionar la carpeta de entrada
-input_folder_label = Label(window, text="Select the input folder")
-input_folder_label.pack(pady=10)
-input_folder_button = Button(window, text="Select the input folder", command=choose_input_folder)
-input_folder_button.pack()
+style = ttk.Style(window)
+style.theme_use("clam")
+style.configure("TLabel", background=BG_COLOR, foreground=FG_COLOR, font=FONT)
+style.configure("TButton", background=ENTRY_BG, foreground=FG_COLOR, font=FONT)
+style.map("TButton", background=[("active", ACCENT_COLOR)], foreground=[("active", "#000")])
+style.configure("TCheckbutton", background=BG_COLOR, foreground=FG_COLOR, font=FONT)
 
-# Etiqueta y botón para seleccionar la carpeta de destino
-output_folder_label = Label(window, text="Select the output folder")
-output_folder_label.pack(pady=10)
-output_folder_button = Button(window, text="Select the output folder", command=choose_output_folder)
-output_folder_button.pack()
+def section(parent, title):
+    section_frame = Frame(parent, bg=BG_COLOR)
+    Label(section_frame, text=title, font=("Segoe UI", 12, "bold"), fg=ACCENT_COLOR, bg=BG_COLOR).pack(anchor="w", pady=(10, 5))
+    return section_frame
 
-# Menú para seleccionar formato de entrada
-input_format_label = Label(window, text="Input image format")
-input_format_label.pack(pady=10)
-input_formats = [".png", ".jpg", ".jpeg", ".webp", ".avif"]
-input_format_var = StringVar(window)
-input_format_var.set(input_formats[0])  # Formato por defecto
-input_format_dropdown = OptionMenu(window, input_format_var, *input_formats)
-input_format_dropdown.pack()
+def dark_entry(parent):
+    entry = Entry(parent, bg=ENTRY_BG, fg=FG_COLOR, insertbackground=FG_COLOR, relief="flat", font=FONT)
+    entry.pack(fill="x", padx=10, pady=4)
+    return entry
 
-# Etiqueta para formato de salida
-output_format_label = Label(window, text="Output image format")
-output_format_label.pack(pady=10)
-file_output_formats_select = [".jpg", ".png", ".webp", ".avif"]
-file_format_var_output = StringVar(window)
-file_format_var_output.set(file_output_formats_select[0])
-file_format_dropdown_output = OptionMenu(window, file_format_var_output, *file_output_formats_select)
-file_format_dropdown_output.pack()
+# === BUILD UI ===
+main_frame = Frame(window, bg=BG_COLOR)
+main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-# Menú para seleccionar algoritmo de compresión
-compression_label = Label(window, text="Select compression algorithm")
-compression_label.pack(pady=10)
-compression_algorithms = ["JPEG", "PNG", "WebP", "AVIF"]
-compression_var = StringVar(window)
-compression_var.set(compression_algorithms[0])
-compression_dropdown = OptionMenu(window, compression_var, *compression_algorithms)
-compression_dropdown.pack()
+folder_section = section(main_frame, "📁 Select Folders")
+folder_section.pack(fill="x")
+ttk.Button(folder_section, text="Input Folder", command=choose_input_folder).pack(pady=2)
+input_folder_label = ttk.Label(folder_section, text="No folder selected")
+input_folder_label.pack()
+ttk.Button(folder_section, text="Output Folder", command=choose_output_folder).pack(pady=2)
+output_folder_label = ttk.Label(folder_section, text="No folder selected")
+output_folder_label.pack()
 
-# Checkbox para compresión sin pérdida
+format_section = section(main_frame, "🖼️ Format & Compression")
+format_section.pack(fill="x")
+input_format_var = StringVar(value=".png")
+ttk.Label(format_section, text="Input Format").pack(anchor="w")
+ttk.OptionMenu(format_section, input_format_var, ".png", ".png", ".jpg", ".jpeg", ".webp", ".avif").pack(fill="x")
+file_format_var_output = StringVar(value=".jpg")
+ttk.Label(format_section, text="Output Format").pack(anchor="w")
+ttk.OptionMenu(format_section, file_format_var_output, ".jpg", ".jpg", ".png", ".webp", ".avif").pack(fill="x")
+compression_var = StringVar(value="JPEG")
+ttk.Label(format_section, text="Compression Algorithm").pack(anchor="w")
+ttk.OptionMenu(format_section, compression_var, "JPEG", "JPEG", "PNG", "WebP", "AVIF").pack(fill="x")
 lossless_var = IntVar()
-lossless_checkbox = Checkbutton(window, text="Apply lossless compression", variable=lossless_var)
-lossless_checkbox.pack(pady=5)
+ttk.Checkbutton(format_section, text="Apply Lossless Compression", variable=lossless_var).pack(anchor="w", pady=5)
 
-# Color de fondo
-background_color_label = Label(window, text="Background color")
-background_color_label.pack()
-background_color_entry = Entry(window)
-background_color_entry.pack()
-choose_color_button = Button(window, text="Select", command=choose_background_color)
-choose_color_button.pack()
+# === NUEVO: opción para quitar fondo ===
+remove_bg_var = IntVar()
+ttk.Checkbutton(format_section, text="Remove Background if Present", variable=remove_bg_var).pack(anchor="w", pady=5)
 
-# Dimensiones y padding
-width_label = Label(window, text="Objective width:")
-width_label.pack()
-width_entry = Entry(window)
-width_entry.pack()
+settings_section = section(main_frame, "🎨 Dimensions & Background")
+settings_section.pack(fill="x")
+ttk.Label(settings_section, text="Background Color (R,G,B)").pack(anchor="w")
+background_color_entry = dark_entry(settings_section)
+ttk.Button(settings_section, text="Pick Color", command=choose_background_color).pack(pady=2)
+width_entry = dark_entry(settings_section)
+width_entry.insert(0, "Width")
+height_entry = dark_entry(settings_section)
+height_entry.insert(0, "Height")
+padding_entry = dark_entry(settings_section)
+padding_entry.insert(0, "Padding")
 
-height_label = Label(window, text="Objective height:")
-height_label.pack()
-height_entry = Entry(window)
-height_entry.pack()
-
-padding_label = Label(window, text="Padding:")
-padding_label.pack()
-padding_entry = Entry(window)
-padding_entry.pack()
-
-# Botón para procesar imágenes
-process_button = Button(window, text="Process images", command=process_images)
-process_button.pack(pady=10)
-
-# Mensaje de estado
-message_label = Label(window, text="")
+progress_bar = ttk.Progressbar(main_frame, length=400, mode='determinate')
+progress_bar.pack(pady=10)
+ttk.Separator(main_frame, orient="horizontal").pack(fill="x", pady=10)
+ttk.Button(main_frame, text="🚀 Process Images", command=process_images).pack(pady=10)
+message_label = ttk.Label(main_frame, text="")
 message_label.pack()
 
-# Ejecutar la interfaz
 window.mainloop()
