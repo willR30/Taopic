@@ -1,4 +1,4 @@
-<img width="497" height="878" alt="image" src="https://github.com/user-attachments/assets/d6c3e1b2-788d-4a65-a6bd-357ff092a719" />
+<img width="300" height="600" alt="image" src="https://github.com/user-attachments/assets/d6c3e1b2-788d-4a65-a6bd-357ff092a719" />
 
 
 # 🖼️ Taopic - Image Processor  
