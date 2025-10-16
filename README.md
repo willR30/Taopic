@@ -27,5 +27,6 @@
 </h3>
 
 <h2>Graphical user interface</h2>
-<img src="https://github.com/willR30/Taopic/assets/50780601/b5cd071e-9fc5-4c11-9204-c6ab169b26d3">
+<img width="497" height="878" alt="image" src="https://github.com/user-attachments/assets/d6c3e1b2-788d-4a65-a6bd-357ff092a719" />
+
 
